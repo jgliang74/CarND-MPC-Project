@@ -24,15 +24,18 @@ size_t a_start = delta_start + N - 1;
 // simulator around in a circle with a constant steering angle and velocity on a
 // flat terrain.
 //
-// Lf was tuned until the the radius formed by the simulating the model
-// presented in the classroom matched the previous radius.
-//
+
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
 
+
+// Lf was tuned until the the radius formed by the simulating the model
+// presented in the classroom matched the previous radius.
+//
+
 double ref_cte  = 0;
 double ref_epsi = 0;
-double ref_v    = 70;
+double ref_v    = 200;
 
 class FG_eval {
  public:
@@ -60,9 +63,9 @@ class FG_eval {
     // The part of the cost based on the reference state.
     for (int t = 0; t < N; t++) 
     {
-      fg[0] += 3000*CppAD::pow(vars[cte_start + t] - ref_cte, 2);
-      fg[0] += 3000*CppAD::pow(vars[epsi_start + t]- ref_epsi, 2);
-      fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
+      fg[0] += 2000*CppAD::pow(vars[cte_start + t] - ref_cte, 2);
+      fg[0] += 2000*CppAD::pow(vars[epsi_start + t]- ref_epsi, 2);
+      fg[0] += 2*CppAD::pow(vars[v_start + t] - ref_v, 2);
     }
 
     // Minimize the use of actuators.
@@ -70,7 +73,12 @@ class FG_eval {
     {
       fg[0] += 5*CppAD::pow(vars[delta_start + t], 2);
       fg[0] += 5*CppAD::pow(vars[a_start + t], 2);
-      fg[0] += 700*CppAD::pow(vars[delta_start + t] * vars[v_start+t], 2);
+    }
+
+    // reduce speed during sharp turns
+    for (int t = 0; t < N - 1; t++)
+    {
+       fg[0] += 200*CppAD::pow(vars[epsi_start + t] * vars[v_start + t], 2);
     }
 
     // Minimize the value gap between sequential actuations.
@@ -106,13 +114,8 @@ class FG_eval {
       AD<double> epsi0 = vars[epsi_start + t - 1];
 
       // Only consider the actuation at time t.
-      AD<double> delta = vars[delta_start + t - 1];
-      AD<double> a = vars[a_start + t - 1];
-      if(t > 1)
-      {
-         a = vars[a_start + t -2];
-         delta = vars[delta_start + t - 2];
-      }
+      AD<double> delta0 = vars[delta_start + t - 1];
+      AD<double> a0 = vars[a_start + t - 1];
 
       AD<double> f0 = coeffs[0] + coeffs[1] * x0 + coeffs[2] * x0 * x0 + coeffs[3] * x0 * x0 * x0;
       AD<double> psides0 = CppAD::atan(3*coeffs[3] * x0 * x0 + 2*coeffs[2]*x0 + coeffs[1]);
@@ -130,10 +133,10 @@ class FG_eval {
 
       fg[1 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
       fg[1 + y_start + t] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
-      fg[1 + psi_start + t] = psi1 - (psi0 - v0 * delta / Lf * dt);
-      fg[1 + v_start + t] = v1 - (v0 + a * dt);
+      fg[1 + psi_start + t] = psi1 - (psi0 - v0 * delta0 / Lf * dt);
+      fg[1 + v_start + t] = v1 - (v0 + a0 * dt);
       fg[1 + cte_start + t] = cte1 - ((f0 - y0) + (v0 * CppAD::sin(epsi0) * dt));
-      fg[1 + epsi_start + t]=epsi1 - ((psi0 - psides0) - v0 * delta / Lf * dt);
+      fg[1 + epsi_start + t]=epsi1 - ((psi0 - psides0) - v0 * delta0 / Lf * dt);
     }
   }
 };
@@ -192,8 +195,8 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs)
 
   for(int i = delta_start; i < a_start; i++)
   {
-       vars_lowerbound[i] = -0.436332;
-       vars_upperbound[i] =  0.436332;
+       vars_lowerbound[i] = -0.436332*Lf;
+       vars_upperbound[i] =  0.436332*Lf;
   }
 
   for(int i = a_start; i < n_vars; i++)
@@ -259,7 +262,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs)
 
   // Cost
   auto cost = solution.obj_value;
-  // std::cout << "Cost " << cost << std::endl;
+  std::cout << "Cost " << cost << std::endl;
 
   // TODO: Return the first actuator values. The variables can be accessed with
   // `solution.x[i]`.

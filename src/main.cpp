@@ -65,6 +65,8 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
+const double contro_delay = 0.1;
+
 int main() {
   uWS::Hub h;
 
@@ -115,8 +117,20 @@ int main() {
           double steer_value = j[1]["steering_angle"];
           double throttle_value = j[1]["throttle"];
 
+          //account for control delay
+
+          // Kinematic model is used to predict vehicle state at the actual
+          // moment of control (current time + delay)
+
+          const double px_delayed = v * contro_delay;
+          const double py_delayed = 0;
+          const double psi_delayed = - v * steer_value * contro_delay / 2.67;
+          const double v_delayed = v + throttle_value * contro_delay;
+          const double cte_delayed = cte + v * sin(epsi) * contro_delay;
+          const double epsi_delayed = epsi + psi_delayed; 
+
           Eigen::VectorXd state(6);
-          state << 0,0,0,v,cte,epsi;
+          state << px_delayed, py_delayed, psi_delayed, v_delayed, cte_delayed, epsi_delayed;
 
           auto vars = mpc.Solve(state, coeffs);
 
@@ -133,7 +147,7 @@ int main() {
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
           
-          msgJson["steering_angle"] = steer_value/(deg2rad(25));
+          msgJson["steering_angle"] = steer_value/(deg2rad(25)*2.67);
           msgJson["throttle"] = throttle_value;
 
           //Display the MPC predicted trajectory 
